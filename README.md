@@ -61,8 +61,8 @@ pip install graphifyy && graphify install
 To install from this repository instead of PyPI:
 
 ```bash
-git clone https://github.com/safishamsi/graphify.git
-cd graphify
+git clone https://github.com/salvatorecastellitti/graphify-qwen
+cd graphify-qwen
 python3 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e .
@@ -125,6 +125,7 @@ After building a graph, run this once in your project:
 | Kiro IDE/CLI | `graphify kiro install` |
 | Qwen Code | `graphify qwen-code install` |
 | Google Antigravity | `graphify antigravity install` |
+| Qwen Code | `python3 ~/{folder where is}/graphify-qwen/graphify/__main__.py qwen-code install` |
 
 **Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to read `graphify-out/GRAPH_REPORT.md` before answering architecture questions, and installs a **PreToolUse hook** (`settings.json`) that fires before every Glob and Grep call. If a knowledge graph exists, Claude sees: _"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ — so Claude navigates via the graph instead of grepping through every file.
 
