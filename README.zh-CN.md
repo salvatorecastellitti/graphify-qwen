@@ -41,6 +41,21 @@ pip install graphifyy && graphify install
 
 > PyPI 包当前暂时叫 `graphifyy`，因为 `graphify` 这个名字还在回收中。CLI 命令和 skill 命令仍然都是 `graphify`。
 
+### 从源码安装
+
+要从仓库安装而不是使用 PyPI：
+
+```bash
+git clone https://github.com/safishamsi/graphify.git
+cd graphify
+python3 -m venv .venv
+source .venv/bin/activate  # Windows 用户: .venv\Scripts\activate
+pip install -e .
+graphify install --platform <your-platform>
+```
+
+将 `<your-platform>` 替换为你的 AI 助手（例如 `claude`、`codex`、`qwen-code`、`cursor` 等）。
+
 ### 平台支持
 
 | 平台 | 安装命令 |

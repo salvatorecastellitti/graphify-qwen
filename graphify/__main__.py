@@ -112,6 +112,11 @@ _PLATFORM_CONFIG: dict[str, dict] = {
         "skill_dst": Path(".claude") / "skills" / "graphify" / "SKILL.md",
         "claude_md": True,
     },
+    "qwen-code": {
+        "skill_file": "skill-qwen.md",
+        "skill_dst": Path(".qwen") / "skills" / "graphify" / "SKILL.md",
+        "claude_md": False,
+    },
 }
 
 
@@ -122,9 +127,12 @@ def install(platform: str = "claude") -> None:
     if platform == "cursor":
         _cursor_install(Path("."))
         return
+    if platform == "qwen-code":
+        _qwen_install(Path("."))
+        return
     if platform not in _PLATFORM_CONFIG:
         print(
-            f"error: unknown platform '{platform}'. Choose from: {', '.join(_PLATFORM_CONFIG)}, gemini, cursor",
+            f"error: unknown platform '{platform}'. Choose from: {', '.join(_PLATFORM_CONFIG)}, gemini, cursor, qwen-code",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -594,6 +602,315 @@ def _cursor_uninstall(project_dir: Path) -> None:
     print(f"graphify Cursor rule removed from {rule_path.resolve()}")
 
 
+# Qwen Code platform support
+# Qwen Code reads AGENTS.md in the project root, .qwen/skills/ directory, and .qwen/commands/
+_QWEN_AGENTS_MD_SECTION = """\
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+"""
+
+_QWEN_AGENTS_MD_MARKER = "## graphify"
+
+# Qwen Code custom commands — installed to ~/.qwen/commands/
+# Following the Qwen Code custom commands specification (Markdown with YAML frontmatter).
+# Path separator → colon mapping:
+#   ~/.qwen/commands/graphify.md          → /graphify
+#   ~/.qwen/commands/graphify/query.md    → /graphify:query
+
+_QWEN_COMMANDS = {
+    # /graphify — main command (build knowledge graph) — goes in commands root
+    "graphify.md": """\
+---
+description: Build a knowledge graph from any folder of files (code, docs, papers, images, video)
+---
+
+Build a knowledge graph from the files in the specified path.
+
+**Usage:** `/graphify [path] [options]`
+
+**Examples:**
+- `/graphify` — build from current directory
+- `/graphify ./src` — build from ./src folder
+- `/graphify . --mode deep` — aggressive extraction with rich INFERRED edges
+- `/graphify . --update` — incremental update (changed files only)
+- `/graphify . --watch` — auto-sync graph as files change
+
+If no path was given, use `.` (current directory). Do not ask the user for a path.
+
+Follow the full graphify skill pipeline:
+1. Detect files in the path
+2. Transcribe video/audio (if any)
+3. Extract entities (AST for code, semantic for docs/papers/images)
+4. Build graph, cluster, analyze
+5. Label communities
+6. Generate outputs (HTML, JSON, report)
+
+After building the graph, inform the user about the outputs:
+- `graphify-out/graph.html` — interactive visualization
+- `graphify-out/GRAPH_REPORT.md` — god nodes, surprising connections, suggested questions
+- `graphify-out/graph.json` — persistent graph data
+""",
+
+    # /graphify:query — query the graph
+    "graphify/query.md": """\
+---
+description: Query the knowledge graph with BFS/DFS traversal
+---
+
+Query the existing knowledge graph to answer a question using graph traversal.
+
+**Usage:** `/graphify:query <question> [options]`
+
+**Examples:**
+- `/graphify:query "what connects attention to the optimizer?"` — BFS traversal, broad context
+- `/graphify:query "what connects attention to the optimizer?" --dfs` — DFS, trace a specific path
+- `/graphify:query "what is CfgNode?" --budget 500` — cap answer at 500 tokens
+
+Before running, check if `graphify-out/graph.json` exists. If not, tell the user to run `/graphify` first.
+
+Use this command when the user wants to ask a specific question about the codebase or corpus and a graph already exists.
+""",
+
+    # /graphify:path — shortest path between two nodes
+    "graphify/path.md": """\
+---
+description: Find the shortest path between two concepts in the knowledge graph
+---
+
+Find the shortest path between two nodes in the knowledge graph.
+
+**Usage:** `/graphify:path <nodeA> <nodeB>`
+
+**Examples:**
+- `/graphify:path "AuthModule" "Database"`
+- `/graphify:path "DigestAuth" "Response"`
+
+Before running, check if `graphify-out/graph.json` exists. If not, tell the user to run `/graphify` first.
+
+Use this command when the user wants to understand how two concepts are connected in the codebase.
+""",
+
+    # /graphify:explain — explain a node
+    "graphify/explain.md": """\
+---
+description: Get a plain-language explanation of a node and its neighbors
+---
+
+Get a plain-language explanation of a node in the knowledge graph and its connections.
+
+**Usage:** `/graphify:explain <node>`
+
+**Examples:**
+- `/graphify:explain "SwinTransformer"`
+- `/graphify:explain "AuthMiddleware"`
+
+Before running, check if `graphify-out/graph.json` exists. If not, tell the user to run `/graphify` first.
+
+Use this command when the user wants to understand what a specific component is and how it relates to the rest of the system.
+""",
+
+    # /graphify:add — add external content
+    "graphify/add.md": """\
+---
+description: Add external content (paper, tweet, video, URL) to the corpus and update the graph
+---
+
+Add external content to the corpus and update the knowledge graph.
+
+**Usage:** `/graphify:add <url> [options]`
+
+**Examples:**
+- `/graphify:add https://arxiv.org/abs/1706.03762` — fetch a paper
+- `/graphify:add https://x.com/karpathy/status/...` — fetch a tweet
+- `/graphify:add <video-url>` — download audio, transcribe, add to graph
+- `/graphify:add https://... --author "Name"` — tag the author
+- `/graphify:add https://... --contributor "Name"` — tag who added it
+
+The content is saved to the `./raw` directory (or the directory specified with `--dir`), and then the graph is updated.
+""",
+
+    # /graphify:update — incremental code-only update
+    "graphify/update.md": """\
+---
+description: Incrementally update the graph for code changes (AST only, no LLM cost)
+---
+
+Incrementally update the knowledge graph by re-extracting only changed code files.
+
+**Usage:** `/graphify:update [path]`
+
+This uses only AST extraction — no LLM calls needed, so it is fast and costs no API tokens.
+
+Use this command after the user has modified code files and wants to keep the graph current.
+""",
+
+    # /graphify:watch — filesystem watcher
+    "graphify/watch.md": """\
+---
+description: Watch a folder and auto-rebuild the graph on code changes
+---
+
+Start a filesystem watcher that automatically rebuilds the knowledge graph when code files change.
+
+**Usage:** `/graphify:watch [path]`
+
+- Code file saves trigger an instant rebuild (AST only, no LLM).
+- Doc/image changes notify the user to run `/graphify . --update` for the LLM re-pass.
+
+Run this in a background terminal for continuous auto-sync.
+""",
+
+    # /graphify:cluster-only — rerun clustering
+    "graphify/cluster-only.md": """\
+---
+description: Rerun community detection on an existing graph without re-extraction
+---
+
+Rerun Leiden community detection on an existing graph.json without re-extracting any files.
+
+**Usage:** `/graphify:cluster-only [path]`
+
+Use this when the graph data is fine but you want to try different community groupings or regenerate the report.
+""",
+}
+
+
+def _qwen_install(project_dir: Path) -> None:
+    """Install graphify for Qwen Code: skill file + AGENTS.md section + custom commands."""
+    project_dir = project_dir or Path(".")
+
+    # Copy skill file to ~/.qwen/skills/graphify/SKILL.md
+    skill_src = Path(__file__).parent / "skill-qwen.md"
+    skill_dst = Path.home() / ".qwen" / "skills" / "graphify" / "SKILL.md"
+    skill_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(skill_src, skill_dst)
+    (skill_dst.parent / ".graphify_version").write_text(__version__, encoding="utf-8")
+    print(f"  skill installed  ->  {skill_dst}")
+
+    # Install custom commands to ~/.qwen/commands/
+    # Files in the root of commands/ become /command_name
+    # Files in commands/graphify/ become /graphify:subcommand
+    commands_dir = Path.home() / ".qwen" / "commands"
+    commands_dir.mkdir(parents=True, exist_ok=True)
+    installed_commands = []
+    for rel_path, content in _QWEN_COMMANDS.items():
+        cmd_path = commands_dir / rel_path
+        cmd_path.parent.mkdir(parents=True, exist_ok=True)
+        if not cmd_path.exists():
+            cmd_path.write_text(content, encoding="utf-8")
+            # Convert file path to command name: graphify/query.md → /graphify:query
+            cmd_name = "/" + rel_path.replace(".md", "").replace("/", ":")
+            installed_commands.append(cmd_name)
+        else:
+            # Check if content differs (version-managed)
+            existing = cmd_path.read_text(encoding="utf-8")
+            if existing.strip() != content.strip():
+                cmd_path.write_text(content, encoding="utf-8")
+                cmd_name = "/" + rel_path.replace(".md", "").replace("/", ":")
+                installed_commands.append(cmd_name + " (updated)")
+
+    if installed_commands:
+        for cmd in installed_commands:
+            print(f"  command installed ->  {cmd}")
+    else:
+        print(f"  commands       ->  already installed (no change)")
+
+    # Write to AGENTS.md in project root
+    agents_md = project_dir / "AGENTS.md"
+    if agents_md.exists():
+        content = agents_md.read_text(encoding="utf-8")
+        if _QWEN_AGENTS_MD_MARKER in content:
+            print(f"AGENTS.md        ->  already configured (no change)")
+        else:
+            agents_md.write_text(content.rstrip() + "\n\n" + _QWEN_AGENTS_MD_SECTION, encoding="utf-8")
+            print(f"AGENTS.md        ->  graphify section added")
+    else:
+        agents_md.write_text(_QWEN_AGENTS_MD_SECTION, encoding="utf-8")
+        print(f"AGENTS.md        ->  created at {agents_md.resolve()}")
+
+    print()
+    print("Done. Open Qwen Code and use these commands:")
+    print()
+    print("  /graphify .                    # build knowledge graph")
+    print("  /graphify:query \"question\"     # query the graph")
+    print("  /graphify:path \"A\" \"B\"         # shortest path between concepts")
+    print("  /graphify:explain \"node\"       # explain a node")
+    print("  /graphify:add <url>            # add external content")
+    print("  /graphify:update               # incremental code-only update")
+    print("  /graphify:watch                # auto-rebuild on changes")
+    print("  /graphify:cluster-only         # rerun community detection")
+    print()
+
+
+def _qwen_uninstall(project_dir: Path) -> None:
+    """Remove graphify skill, AGENTS.md section, and custom commands for Qwen Code."""
+    project_dir = project_dir or Path(".")
+
+    # Remove skill file
+    skill_dst = Path.home() / ".qwen" / "skills" / "graphify" / "SKILL.md"
+    if skill_dst.exists():
+        skill_dst.unlink()
+        print(f"  skill removed    ->  {skill_dst}")
+    version_file = skill_dst.parent / ".graphify_version"
+    if version_file.exists():
+        version_file.unlink()
+    # Clean up empty parent directories
+    for d in (skill_dst.parent, skill_dst.parent.parent, skill_dst.parent.parent.parent):
+        try:
+            d.rmdir()
+        except OSError:
+            break
+
+    # Remove custom commands from ~/.qwen/commands/
+    commands_dir = Path.home() / ".qwen" / "commands"
+    if commands_dir.exists():
+        removed = []
+        for rel_path in _QWEN_COMMANDS:
+            cmd_path = commands_dir / rel_path
+            if cmd_path.exists():
+                cmd_path.unlink()
+                # Convert to command name for display
+                cmd_name = "/" + rel_path.replace(".md", "").replace("/", ":")
+                removed.append(cmd_name)
+        # Remove the graphify/ subdirectory if empty
+        graphify_cmds = commands_dir / "graphify"
+        if graphify_cmds.exists():
+            try:
+                graphify_cmds.rmdir()
+            except OSError:
+                pass
+        if removed:
+            print(f"  commands removed ->  {', '.join(removed)}")
+        else:
+            print(f"  commands       ->  none found")
+    else:
+        print(f"  commands       ->  no commands directory found")
+
+    # Remove AGENTS.md section
+    agents_md = project_dir / "AGENTS.md"
+    if not agents_md.exists():
+        print("No AGENTS.md found in current directory - nothing to do")
+        return
+    content = agents_md.read_text(encoding="utf-8")
+    if _QWEN_AGENTS_MD_MARKER not in content:
+        print("graphify section not found in AGENTS.md - nothing to do")
+        return
+    cleaned = re.sub(r"\n*## graphify\n.*?(?=\n## |\Z)", "", content, flags=re.DOTALL).rstrip()
+    if cleaned:
+        agents_md.write_text(cleaned + "\n", encoding="utf-8")
+        print(f"graphify section removed from {agents_md.resolve()}")
+    else:
+        agents_md.unlink()
+        print(f"AGENTS.md was empty after removal - deleted {agents_md.resolve()}")
+
+
+
 # OpenCode tool.execute.before plugin — fires before every tool call.
 # Injects a graph reminder into bash command output when graph.json exists.
 _OPENCODE_PLUGIN_JS = """\
@@ -897,7 +1214,7 @@ def main() -> None:
         print("Usage: graphify <command>")
         print()
         print("Commands:")
-        print("  install [--platform P]  copy skill to platform config dir (claude|windows|codex|opencode|aider|claw|droid|trae|trae-cn|gemini|cursor|antigravity|hermes|kiro)")
+        print("  install [--platform P]  copy skill to platform config dir (claude|windows|codex|opencode|aider|claw|droid|trae|trae-cn|gemini|cursor|qwen-code|antigravity|hermes|kiro)")
         print("  path \"A\" \"B\"            shortest path between two nodes in graph.json")
         print("    --graph <path>          path to graph.json (default graphify-out/graph.json)")
         print("  explain \"X\"             plain-language explanation of a node and its neighbors")
@@ -927,6 +1244,8 @@ def main() -> None:
         print("  gemini uninstall        remove GEMINI.md section + BeforeTool hook")
         print("  cursor install          write .cursor/rules/graphify.mdc (Cursor)")
         print("  cursor uninstall        remove .cursor/rules/graphify.mdc")
+        print("  qwen-code install       write skill to ~/.qwen/skills/ + AGENTS.md + custom commands (Qwen Code)")
+        print("  qwen-code uninstall     remove skill, AGENTS.md section, and custom commands")
         print("  claude install          write graphify section to CLAUDE.md + PreToolUse hook (Claude Code)")
         print("  claude uninstall        remove graphify section from CLAUDE.md + PreToolUse hook")
         print("  codex install           write graphify section to AGENTS.md (Codex)")
@@ -999,6 +1318,15 @@ def main() -> None:
             _cursor_uninstall(Path("."))
         else:
             print("Usage: graphify cursor [install|uninstall]", file=sys.stderr)
+            sys.exit(1)
+    elif cmd == "qwen-code":
+        subcmd = sys.argv[2] if len(sys.argv) > 2 else ""
+        if subcmd == "install":
+            _qwen_install(Path("."))
+        elif subcmd == "uninstall":
+            _qwen_uninstall(Path("."))
+        else:
+            print("Usage: graphify qwen-code [install|uninstall]", file=sys.stderr)
             sys.exit(1)
     elif cmd == "vscode":
         subcmd = sys.argv[2] if len(sys.argv) > 2 else ""

@@ -54,6 +54,21 @@ pip install graphifyy && graphify install
 
 > PyPI 패키지는 `graphify` 이름을 되찾는 동안 임시로 `graphifyy`로 명명되어 있습니다. CLI와 스킬 명령은 여전히 `graphify`입니다.
 
+### 소스에서 설치
+
+PyPI 대신 이 저장소에서 설치하려면:
+
+```bash
+git clone https://github.com/safishamsi/graphify.git
+cd graphify
+python3 -m venv .venv
+source .venv/bin/activate  # Windows의 경우: .venv\Scripts\activate
+pip install -e .
+graphify install --platform <your-platform>
+```
+
+`<your-platform>`을 사용하는 AI 어시스턴트로 교체하세요 (예: `claude`, `codex`, `qwen-code`, `cursor` 등).
+
 ### 플랫폼 지원
 
 | 플랫폼 | 설치 명령 |

@@ -48,13 +48,28 @@ Every relationship is tagged `EXTRACTED` (found directly in source), `INFERRED` 
 
 ## Install
 
-**Requires:** Python 3.10+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [OpenCode](https://opencode.ai), [Cursor](https://cursor.com), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), [VS Code Copilot Chat](https://code.visualstudio.com/docs/copilot/overview), [Aider](https://aider.chat), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), [Trae](https://trae.ai), [Kiro](https://kiro.dev), Hermes, or [Google Antigravity](https://antigravity.google)
+**Requires:** Python 3.10+ and one of: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex), [OpenCode](https://opencode.ai), [Cursor](https://cursor.com), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli), [VS Code Copilot Chat](https://code.visualstudio.com/docs/copilot/overview), [Aider](https://aider.chat), [OpenClaw](https://openclaw.ai), [Factory Droid](https://factory.ai), [Trae](https://trae.ai), [Kiro](https://kiro.dev), Hermes, [Qwen Code](https://github.com/QwenLM/qwen-code), or [Google Antigravity](https://antigravity.google)
 
 ```bash
 pip install graphifyy && graphify install
 ```
 
 > **Official package:** The PyPI package is named `graphifyy` (install with `pip install graphifyy`). Other packages named `graphify*` on PyPI are not affiliated with this project. The only official repository is [safishamsi/graphify](https://github.com/safishamsi/graphify). The CLI and skill command are still `graphify`.
+
+### Install from source
+
+To install from this repository instead of PyPI:
+
+```bash
+git clone https://github.com/safishamsi/graphify.git
+cd graphify
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -e .
+graphify install --platform <your-platform>
+```
+
+Replace `<your-platform>` with your AI assistant (e.g., `claude`, `codex`, `qwen-code`, `cursor`, etc.).
 
 ### Platform support
 
@@ -75,6 +90,7 @@ pip install graphifyy && graphify install
 | Hermes | `graphify install --platform hermes` |
 | Kiro IDE/CLI | `graphify kiro install` |
 | Cursor | `graphify cursor install` |
+| Qwen Code | `graphify install --platform qwen-code` |
 | Google Antigravity | `graphify antigravity install` |
 
 Codex users also need `multi_agent = true` under `[features]` in `~/.codex/config.toml` for parallel extraction. Factory Droid uses the `Task` tool for parallel subagent dispatch. OpenClaw and Aider use sequential extraction (parallel agent support is still early on those platforms). Trae uses the Agent tool for parallel subagent dispatch and does **not** support PreToolUse hooks — AGENTS.md is the always-on mechanism. Codex supports PreToolUse hooks — `graphify codex install` installs one in `.codex/hooks.json` in addition to writing AGENTS.md.
@@ -107,6 +123,7 @@ After building a graph, run this once in your project:
 | Gemini CLI | `graphify gemini install` |
 | Hermes | `graphify hermes install` |
 | Kiro IDE/CLI | `graphify kiro install` |
+| Qwen Code | `graphify qwen-code install` |
 | Google Antigravity | `graphify antigravity install` |
 
 **Claude Code** does two things: writes a `CLAUDE.md` section telling Claude to read `graphify-out/GRAPH_REPORT.md` before answering architecture questions, and installs a **PreToolUse hook** (`settings.json`) that fires before every Glob and Grep call. If a knowledge graph exists, Claude sees: _"graphify: Knowledge graph exists. Read GRAPH_REPORT.md for god nodes and community structure before searching raw files."_ — so Claude navigates via the graph instead of grepping through every file.
@@ -122,6 +139,8 @@ After building a graph, run this once in your project:
 **Aider, OpenClaw, Factory Droid, Trae, and Hermes** write the same rules to `AGENTS.md` in your project root and copy the skill to the platform's global skill directory. These platforms don't support tool hooks, so AGENTS.md is the always-on mechanism.
 
 **Kiro IDE/CLI** writes the skill to `.kiro/skills/graphify/SKILL.md` (invoked via `/graphify`) and a steering file to `.kiro/steering/graphify.md` with `inclusion: always` — Kiro injects this into every conversation automatically, no hook needed.
+
+**Qwen Code** copies the skill to `~/.qwen/skills/graphify/SKILL.md`, writes a graphify section to `AGENTS.md` in your project root, and installs **custom commands** to `~/.qwen/commands/` — giving you shortcut commands like `/graphify:query`, `/graphify:path`, `/graphify:explain`, `/graphify:add`, `/graphify:update`, `/graphify:watch`, and `/graphify:cluster-only`. Qwen Code reads these automatically every session. Run `graphify qwen-code install`.
 
 **Google Antigravity** writes `.agent/rules/graphify.md` (always-on rules) and `.agent/workflows/graphify.md` (registers `/graphify` as a slash command). No hook equivalent exists in Antigravity — rules are the always-on mechanism.
 
@@ -247,6 +266,8 @@ graphify codex install             # AGENTS.md + PreToolUse hook in .codex/hooks
 graphify opencode install          # AGENTS.md + tool.execute.before plugin (OpenCode)
 graphify cursor install            # .cursor/rules/graphify.mdc (Cursor)
 graphify cursor uninstall
+graphify qwen-code install         # ~/.qwen/skills/ + AGENTS.md section (Qwen Code)
+graphify qwen-code uninstall
 graphify gemini install            # GEMINI.md + BeforeTool hook (Gemini CLI)
 graphify gemini uninstall
 graphify copilot install           # skill file (GitHub Copilot CLI)
